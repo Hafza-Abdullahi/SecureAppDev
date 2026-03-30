@@ -18,6 +18,35 @@
         }
 
         //CHECK IF USER IS LOCKED OUT
+        $checkClient = "SELECT `failedLoginCount`, `timeStamp` FROM `failedLogins` WHERE `ip` = ?";
+        $stmt = $conn->prepare($checkClient);
+        $stmt->bind_param("s", $ipAddr);
+        $stmt->execute();
+        $result = $stmt->get_result(); 
+        
+        // keep track of failed login attempts for this IP and lock them out if they have 5 or more within the last 3 minutes
+        if ($result->num_rows > 0) {
+            $row = $result->fetch_assoc();
+            $failedLoginCount = $row['failedLoginCount'];
+            $failedLoginTime = $row['timeStamp'];
+            
+            // If they have 5 or more attempts, check how long it's been since their last attempt
+            if ($failedLoginCount >= 5) {
+                $currTime = date("Y-m-d H:i:s");
+                $timeDiff = abs(strtotime($currTime) - strtotime($failedLoginTime));
+                
+                // user gets kicked out after 5 failed attempts within 3 minutes
+                if((int)$timeDiff <= 180) { 
+                    $secondsLeft = 180 - $timeDiff;
+                    $_SESSION['register'] = "Error: Too many requests. Please wait " . $secondsLeft . " seconds.";
+                    header("Location: ../index.php");
+                    exit();
+                }
+            }
+        }
+
+        /* OLD CODE 
+        //CHECK IF USER IS LOCKED OUT
         $checkClient = "SELECT `failedLoginCount` FROM `failedLogins` WHERE `ip` = ?";
         $stmt = $conn->prepare($checkClient);
         $stmt->bind_param("s", $ipAddr);
@@ -27,7 +56,7 @@
             $_SESSION['register'] = "Error: locked out.";
             header("Location: ../index.php");
             exit();
-        }
+        } */
         
         // Check for empty fields
         if (empty($uid) || empty($pwd)) {
@@ -71,6 +100,13 @@
                         }
 
                         $_SESSION['register'] = "You've successfully registered as " . $uid . ".";
+
+                        // Update spam counter to avoid infinite acc creation
+                        $currTime = date("Y-m-d H:i:s");
+                        $updateCount = "UPDATE `failedLogins` SET `failedLoginCount` = `failedLoginCount` + 1, `timeStamp` = ? WHERE `ip` = ?"; 
+                        $stmtCount = $conn->prepare($updateCount);
+                        $stmtCount->bind_param("ss", $currTime, $ipAddr);
+                        $stmtCount->execute();
 
                         header("Location: ../index.php");
                         exit();

@@ -75,13 +75,17 @@ Objectives
 
 		if (isset($_REQUEST['target'])) {
 			$target = $_REQUEST['target'];
+
 			//echo &target;
 			if($target){
+
+			// Escape the input so the OS treats it as a single string, not a command
+			$safe_target = escapeshellarg($target);
 				if (stristr(php_uname('s'), 'Windows NT')) { 
-				   $cmd = shell_exec( 'ping  ' . $target );
+				   $cmd = shell_exec( 'ping  ' . $safe_target );
 					echo '<pre>'.$cmd.'</pre>';
 					} else { 
-						$cmd = shell_exec( 'ping  -c 3 ' . $target );
+						$cmd = shell_exec( 'ping  -c 3 ' . $safe_target );
 						echo '<pre>'.$cmd.'</pre>';
 					}
 				}

@@ -76,15 +76,17 @@ if (isset($_POST['submit'])) {
                     $currTime = date("Y-m-d H:i:s");
                     $timeDiff = abs(strtotime($currTime) - strtotime($failedLoginTime));
                     $_SESSION['timeLeft'] = 180 - $timeDiff; //Print to inform user of how many seconds remain on the lockout
-
-                    if((int)$timeDiff <= 180) {
+                    
+                    
+                    if((int)$timeDiff <= 180) { 
                         $_SESSION['lockedOut'] = "Due to multiple failed logins you're now locked out, please try again in 3 minutes"; //Should also stop user if they try to register
-
+                        
+                        $safe_uid = cleanChars($uid);
                         //Store unsuccessful login attempt, uid, timestamp, IP in log format for viewing at admin.php
                         $time = date("Y-m-d H:i:s");
                         $recordLogin = "INSERT INTO `loginEvents` (`ip`, `timeStamp`, `user_id`, `outcome`) VALUES (?, ?, ?, 'fail')"; //$ipAddr, $time, $uid
                         $stmt = $conn->prepare($recordLogin);
-                        $stmt->bind_param("sss", $ipAddr, $time, cleanChars($uid));
+                        $stmt->bind_param("sss", $ipAddr, $time, $safe_uid);
                         $stmt->execute();
 
                         if(!$stmt->execute()) {
@@ -129,80 +131,96 @@ function processLogin($conn, $uid, $pwd, $ipAddr) {
     // Errors handlers
     // Check if inputs are empty
     if (empty($uid) || empty($pwd)) {
-
         header("Location: ../index.php?login=empty");
         failedLogin($uid,$ipAddr);
         exit();
 
-    } else {
-
-		try{
-		$sql = "SELECT * FROM sapusers WHERE user_uid = '" .$uid. "' and user_pwd ='" .$pwd. "'";
-		$result = $conn->query($sql);
-		
-		}catch (Exception $e) {
-			echo 'Caught exception: ',  $e->getMessage(), "\n";
-			failedLogin($e->getMessage(),$ipAddr);
-		}
-		
-        if ($result->num_rows < 1) {
-            
-            //failedLogin($sql,$ipAddr);
-			failedLogin($uid,$ipAddr);
-
-        } else {
-
-            if ($row = mysqli_fetch_assoc($result)) {
-                //Check password
-				
-				// $pwd inputted from user
-                $hashedPwdCheck = $row['user_pwd'];
-
-                if (strcmp($hashedPwdCheck, $pwd) !== 0){
-
-                    failedLogin($uid,$ipAddr);
-
-                } else{
-                    //Initiate session
-                    $_SESSION['u_id'] = $row['user_id'];
-                    $_SESSION['u_uid'] = $row['user_uid'];
-                    $_SESSION['u_admin'] = $row['user_admin']; //Will be 0 for non admin users
-                    
-                    //Store successful login attempt, uid, timestamp, IP in log format for viewing at admin.php
-                    $time = date("Y-m-d H:i:s");
-                    $recordLogin = "INSERT INTO `loginEvents` (`ip`, `timeStamp`, `user_id`, `outcome`) VALUES (?, ?, ?, 'success')"; 
-                    $stmt = $conn->prepare($recordLogin);
-                    $stmt->bind_param("sss", $ipAddr, $time, cleanChars($uid));
-
-                    if(!$stmt->execute()) {
-                        die("Errorx: " . $stmt->error);
-                    } else {
-                        header("Location: ../auth1.php");
-                        exit();
-                    }
-                }
-            }
-        }
     }
-} 
-
-function failedLogin ($uid,$ipAddr) {
-    include "dbh.inc.php";
-    //When login fails redirect to index and set the failedMsg variable so it can be displayed on index
-    $_SESSION['failedMsg'] = "The username " . cleanChars($uid) . " and password could not be authenticated at this moment.";
+    /* OLD CODE
+    $sql = "SELECT * FROM sapusers WHERE user_uid = '" .$uid. "' and user_pwd ='" .$pwd. "'";
+    $result = $conn->query($sql);
     
-    //Store unsuccessful login attempt, uid, timestamp, IP in log format for viewing at admin.php
+    }catch (Exception $e) {
+        echo 'Caught exception: ',  $e->getMessage(), "\n";
+        failedLogin($e->getMessage(),$ipAddr);
+    }
+    
+    if ($result->num_rows < 1) {
+        
+        //failedLogin($sql,$ipAddr);
+        failedLogin($uid,$ipAddr); */
+
+
+    // Secure Query using Prepared Statements instead of directly inserting user input into the SQL query to prevent SQL injection
+    $sql = "SELECT * FROM sapusers WHERE user_uid = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("s", $uid);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    // Check if user exists
+    if ($row = mysqli_fetch_assoc($result)) {
+        $hashedPwdCheck = $row['user_pwd'];
+
+        // Secure password comparison
+        if (strcmp($hashedPwdCheck, $pwd) !== 0) {
+            failedLogin($uid, $ipAddr);
+            exit();
+        } else {
+            // SUCCESSFUL LOGIN
+            session_regenerate_id(true); // Regenerate session ID to prevent session fixation attacks
+
+            $_SESSION['u_id'] = $row['user_id'];
+            $_SESSION['u_uid'] = $row['user_uid'];
+            $_SESSION['u_admin'] = $row['user_admin']; 
+            
+            // Log the success
+            $time = date("Y-m-d H:i:s");
+
+            // clean the uid before logging to prevent XSS in the logs, even though it's not being rendered as HTML, 
+            // sanitize any user input before storing it or displaying it anywhere.
+            $safeUid = cleanChars($uid);
+            
+            $recordLogin = "INSERT INTO `loginEvents` (`ip`, `timeStamp`, `user_id`, `outcome`) VALUES (?, ?, ?, 'success')"; 
+            $stmtLog = $conn->prepare($recordLogin);
+            $stmtLog->bind_param("sss", $ipAddr, $time, $safeUid);
+            $stmtLog->execute();
+
+            header("Location: ../auth1.php");
+            exit();
+        }
+    } else {
+        // User not found - log the failed attempt 
+        // no need to sanitize uid since its sanitized in the failedLogin function.
+        failedLogin($uid, $ipAddr);
+        exit();
+    }
+}  
+ 
+
+function failedLogin ($uid, $ipAddr) {
+    include "dbh.inc.php";
+
+    // Clean the ID ONE time here and save as a variable
+    $safeUid = cleanChars($uid); 
+
+    // Use the safe variable for the session message
+    $_SESSION['failedMsg'] = "The username " . $safeUid . " and password could not be authenticated at this moment.";
+    
+    //Store unsuccessful login attempt
     $time = date("Y-m-d H:i:s");
-    $recordLogin = "INSERT INTO `loginEvents` (`ip`, `timeStamp`, `user_id`, `outcome`) VALUES (?, ?, ?, 'fail')"; //$ipAddr, $time, $uid
+    $recordLogin = "INSERT INTO `loginEvents` (`ip`, `timeStamp`, `user_id`, `outcome`) VALUES (?, ?, ?, 'fail')";
     $stmt = $conn->prepare($recordLogin);
-    $stmt->bind_param("sss", $ipAddr, $time, cleanChars($uid));
+    
+    // safeUid is used here to prevent any potential XSS in the logs
+    $stmt->bind_param("sss", $ipAddr, $time, $safeUid);
 
     if(!$stmt->execute()) {
         die("Error 1: " . $stmt->error);
     } else {
         //Update failed login count for client
         $currTime = date("Y-m-d H:i:s");
-        $updateCount = "UPDATE `failedLogins` SET `failedLoginCount` = `failedLoginCount` + 1, `timeStamp` = ? WHERE `ip` = ?"; //$currTime, $ipAddr
+        $updateCount = "UPDATE `failedLogins` SET `failedLoginCount` = `failedLoginCount` + 1, `timeStamp` = ? WHERE `ip` = ?"; 
         $stmt = $conn->prepare($updateCount);
         $stmt->bind_param("ss", $currTime, $ipAddr);
 
@@ -213,10 +231,13 @@ function failedLogin ($uid,$ipAddr) {
             exit();
         }
     }
-    
 }
 
 function cleanChars($val)
 {
-return $val;
+    # return $val; Old code, no sanitization
+
+    // This converts characters like < and > into &lt; and &gt;
+    // preventing the browser from running them as scripts.
+    return htmlspecialchars($val, ENT_QUOTES, 'UTF-8');
 }

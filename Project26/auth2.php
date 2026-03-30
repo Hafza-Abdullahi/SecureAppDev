@@ -12,15 +12,18 @@
                 <h2>Auth page 2</h2>
 				<?php
 				$ViewFile = $_GET['FileToView'];
+
+				// Strip out all directory traversal characters (../) 
+				$safe_file = basename($ViewFile);
      
-				if(file_get_contents ("$ViewFile"))    
+				if(file_exists($safe_file))    
 				{
-				$FileData = file_get_contents ("$ViewFile");
-				echo $FileData;
+					$FileData = file_get_contents($safe_file);
+					echo htmlspecialchars($FileData, ENT_QUOTES, 'UTF-8');
 				}
 				else
 				{
-				echo "no file found";
+					echo "no file found";
 				}
 ?>
             </div>

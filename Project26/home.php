@@ -10,9 +10,9 @@
 					$conn = mysqli_connect("localhost","TEST","");
 					
 					 if(! $conn ) {
-						die('Could not connect: ' . mysql_error());
+						die('Could not connect: ' . mysqli_error($conn));
 					} else {
-					mysqli_query($conn,"CREATE DATABASE secureappdev");
+					mysqli_query($conn, "CREATE DATABASE IF NOT EXISTS secureappdev");
 					
 					}
 					

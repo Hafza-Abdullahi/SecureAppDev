@@ -1,4 +1,9 @@
 <?php
+    // Prevent browser caching of sensitive pages so the "Back" button doesn't leak data
+    header("Cache-Control: no-cache, no-store, must-revalidate"); // HTTP 1.1
+    header("Pragma: no-cache"); // HTTP 1.0
+    header("Expires: 0"); // Proxies
+
     session_start();
     //include_once 'includes/dbh.inc.php';
     if(!isset($_SESSION['u_id'])) {
@@ -16,6 +21,13 @@
 <title>Super Secure Site</title>
 <link rel="stylesheet" href="css/style.css">
 <script>
+    // Detect if the browser loaded this from bfcache and if so, 
+    // force a reload to ensure the session validation is correct and up to date.
+    window.onpageshow = function(event) {
+    if (event.persisted) {
+        window.location.reload();
+    }
+};
 //Run the function on window.onload
     window.onload = function() {
     inactiveUser(); 

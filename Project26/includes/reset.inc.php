@@ -4,13 +4,21 @@
 include 'dbh.inc.php';
 session_start();
 
-if (!isset($_GET['reset'],$_SESSION['u_uid'])) {
+if (!isset($_POST['reset'],$_SESSION['u_uid'])) {
     $_SESSION['resetError'] = "Error code 1";
     header("Location: ../index.php");
 } else {
-    $oldpass = $_GET['old'];
-    $newConfirm = $_GET['new_confirm'];
-    $newpass = $_GET['new'];
+    $oldpass = $_POST['old'];
+    $newConfirm = $_POST['new_confirm'];
+    $newpass = $_POST['new'];
+
+    // CSRF Token Validation
+    // check if the token in the URL matches the secret token in the user's Session
+    if (!isset($_POST['csrftoken']) || $_POST['csrftoken'] !== $_SESSION['csrftoken']) {
+        $_SESSION['resetError'] = "Security Error: CSRF token invalid or missing.";
+        header("Location: ../index.php");
+        exit();
+    }
 
     if (empty($oldpass || $newpass)) {
         $_SESSION['resetError'] = "Error code 2";
@@ -28,7 +36,7 @@ if (!isset($_GET['reset'],$_SESSION['u_uid'])) {
 
             $row = mysqli_fetch_assoc($result); 
 
-			
+            
             if (strcmp($oldpass, $row['user_pwd']) !== 0) {
                 $_SESSION['resetError'] = "Error code 4";
                 header("Location: ../index.php");
